@@ -30,20 +30,29 @@ from MultiRegex import MultiRegex
 
 class VCFReader():
 	_DEFAULT_MAPPINGS = {
-		("TEL", "CELL"):		"phone_cell",
-		("TEL", "HOME"):		"phone_home",
-		("TEL", "WORK"):		"phone_work",
-		("TEL", "VOICE"):		"phone_voice",
-		("TEL", "X-Mobil"):		"phone_cell",
-		("N", None):			"name",
-		("FN", None):			"full_name",
-		("BDAY", None):			"birthday",
+		("TEL", "CELL"):			"phone_cell",
+		("TEL", "CELL;PREF"):		"phone_cell",
+		("TEL", "HOME"):			"phone_home",
+		("TEL", "HOME;PREF"):		"phone_home",
+		("TEL", "WORK"):			"phone_work",
+		("TEL", "WORK;FAX"):		"phone_work",
+		("TEL", "VOICE"):			"phone_voice",
+		("EMAIL", "WORK"):			"email_work",
+		("EMAIL", "HOME"):			"email_home",
+		("EMAIL", "X-INTERNET"):	"email_home",
+		("TEL", "X-Mobil"):			"phone_cell",
+		("N", None):				"name",
+		("FN", None):				"full_name",
+		("BDAY", None):				"birthday",
+		("ORG", None):				"organization",
+		("URL", None):				"url",
+		("ADR", None):				"adr",
 	}
 	_LineParser = MultiRegex(collections.OrderedDict((
 		("begin", re.compile("begin:vcard", flags = re.IGNORECASE)),
 		("end", re.compile("end:vcard", flags = re.IGNORECASE)),
 		("version", re.compile("version:(?P<version>.*)", flags = re.IGNORECASE)),
-		("field", re.compile("(?P<fieldtype>(N|FN|TEL|PHOTO|X-ANDROID-CUSTOM|BDAY))(;(?P<options>[^:]+))?:(?P<value>.*)")),
+		("field", re.compile("(?P<fieldtype>(N|FN|TEL|EMAIL|PHOTO|X-ANDROID-CUSTOM|BDAY|ORG|URL|ADR))(;(?P<options>[^:]+))?:(?P<value>.*)")),
 		("contdata", re.compile("\s+(?P<data>.*)")),
 		("emptyline", re.compile("")),
 	)))
