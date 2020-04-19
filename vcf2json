@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+#	pigration - Smart phone migration scripts
+#	Copyright (C) 2020-2020 Johannes Bauer
+#
+#	This file is part of pigration.
+#
+#	pigration is free software; you can redistribute it and/or modify
+#	it under the terms of the GNU General Public License as published by
+#	the Free Software Foundation; this program is ONLY licensed under
+#	version 3 of the License, later versions are explicitly excluded.
+#
+#	pigration is distributed in the hope that it will be useful,
+#	but WITHOUT ANY WARRANTY; without even the implied warranty of
+#	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#	GNU General Public License for more details.
+#
+#	You should have received a copy of the GNU General Public License
+#	along with pigration; if not, write to the Free Software
+#	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#
+#	Johannes Bauer <JohannesBauer@gmx.de>
+
+import sys
+import json
+import re
+import collections
+import quopri
+from FriendlyArgumentParser import FriendlyArgumentParser
+from MultiRegex import MultiRegex
+
+class VCFReader():
+	_DEFAULT_MAPPINGS = {
+		("TEL", "CELL"):		"phone_cell",
+		("TEL", "HOME"):		"phone_home",
+		("TEL", "WORK"):		"phone_work",
+		("TEL", "VOICE"):		"phone_voice",
+		("TEL", "X-Mobil"):		"phone_cell",
+		("N", None):			"name",
+		("FN", None):			"full_name",
+		("BDAY", None):			"birthday",
+	}
+	_LineParser = MultiRegex(collections.OrderedDict((
+		("begin", re.compile("begin:vcard", flags = re.IGNORECASE)),
+		("end", re.compile("end:vcard", flags = re.IGNORECASE)),
+		("version", re.compile("version:(?P<version>.*)", flags = re.IGNORECASE)),
+		("field", re.compile("(?P<fieldtype>(N|FN|TEL|PHOTO|X-ANDROID-CUSTOM|BDAY))(;(?P<options>[^:]+))?:(?P<value>.*)")),
+		("contdata", re.compile("\s+(?P<data>.*)")),
+		("emptyline", re.compile("")),
+	)))
+
+	def __init__(self, args):
+		self._args = args
+		self._entries = [ ]
+		self._current = None
+		self._contdata = None
+
+	def _match_begin(self, line, name, result):
+		self._current = collections.defaultdict(list)
+		self._entries.append(self._current)
+
+	def _match_end(self, line, name, result):
+		self._current = None
+
+	def _match_version(self, line, name, result):
+		pass
+
+	def _match_field(self, line, name, result):
+		if (result["options"] is None) or (result["options"] == ""):
+			options = [ ]
+		else:
+			options = result["options"].split(";")
+
+		loptions = [ option.lower() for option in options ]
+		if "encoding=quoted-printable" in loptions:
+			charset = None
+			for option in loptions:
+				if option.startswith("charset="):
+					charset = option[8:]
+					break
+			if charset is None:
+				charset = "utf-8"
+				print("Warning: Quoted-printable without charset (\"%s\"). Defaulting to %s." % (line, charset))
+
+			value = quopri.decodestring(result["value"]).decode(charset)
+			key = (result["fieldtype"], None)
+		elif result["fieldtype"].lower() == "photo":
+			self._contdata = [ "photo", result["value"] ]
+			return
+		else:
+			value = result["value"]
+			key = (result["fieldtype"], result["options"])
+
+		local_key = self._DEFAULT_MAPPINGS.get(key)
+		if local_key is None:
+			print("Warning: Ignoring entry \"%s\" with key %s. No local key." % (line, str(key)))
+		else:
+			self._current[local_key].append(value)
+
+	def _match_contdata(self, line, name, result):
+		self._contdata[1] += result["data"]
+
+	def _match_emptyline(self, line, name, result):
+		(local_key, value) = self._contdata
+		self._current[local_key].append(value)
+		self._contdata = None
+
+	def _parse_line(self, line):
+		try:
+			result = self._LineParser.fullmatch(line, callback = self, groupdict = True)
+		except NoRegexMatchedException:
+			print("Unknown interpretation: %s" % (line))
+
+	def parse(self, filename):
+		with open(filename) as f:
+			for (lineno, line) in enumerate(f, 1):
+				line = line.rstrip("\r\n")
+				self._parse_line(line)
+
+	def write(self, filename):
+		with open(filename, "w") as f:
+			json.dump(self._entries, f, sort_keys = True, indent = 4)
+			f.write("\n")
+
+parser = FriendlyArgumentParser(description = "Convert VCF to a internal JSON format")
+parser.add_argument("-v", "--verbose", action = "count", default = 0, help = "Increases verbosity. Can be specified multiple times to increase.")
+parser.add_argument("vcf_file", metavar = "vcf_file", type = str, help = "VCF input filename")
+parser.add_argument("json_file", metavar = "json_file", type = str, help = "JSON output filename")
+args = parser.parse_args(sys.argv[1:])
+
+reader = VCFReader(args)
+reader.parse(args.vcf_file)
+reader.write(args.json_file)
